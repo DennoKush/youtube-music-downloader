@@ -1,4 +1,19 @@
+<div align="center">
+
+<img src="icons/exm-media.png" alt="eXM Media" width="128">
+
 # eXM Media
+
+**A simple desktop app for downloading music, videos and thumbnails**
+
+[![Python](https://img.shields.io/badge/python-3-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![GUI](https://img.shields.io/badge/gui-tkinter-1FCECB?style=for-the-badge)](https://docs.python.org/3/library/tkinter.html)
+[![yt-dlp](https://img.shields.io/badge/powered%20by-yt--dlp-CF1F22?style=for-the-badge)](https://github.com/yt-dlp/yt-dlp)
+[![FFmpeg](https://img.shields.io/badge/ffmpeg-required-007808?style=for-the-badge&logo=ffmpeg&logoColor=white)](https://ffmpeg.org/)
+[![Platform](https://img.shields.io/badge/platform-linux-1F2430?style=for-the-badge&logo=linux&logoColor=white)](#requirements)
+[![Last commit](https://img.shields.io/github/last-commit/DennoKush/youtube-music-downloader?style=for-the-badge&color=CCCCFF&labelColor=555)](https://github.com/DennoKush/youtube-music-downloader/commits/main)
+
+</div>
 
 A small desktop app for downloading music, videos and thumbnails from a URL. It is a Tkinter interface on top of [yt-dlp](https://github.com/yt-dlp/yt-dlp), with FFmpeg doing the conversion.
 
