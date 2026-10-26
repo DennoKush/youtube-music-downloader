@@ -5,6 +5,7 @@ import os
 import queue
 import re
 import shutil
+import signal
 import subprocess
 import threading
 import tkinter as tk
@@ -107,6 +108,8 @@ class MediaDownloader:
         self.events = queue.Queue()
         self.running = False
         self.loading = False
+        self.process = None
+        self.cancelled = False
         self.current_duration = None
 
         self.create_styles()
@@ -363,13 +366,26 @@ class MediaDownloader:
         )
         self.thumbnail_box.pack(fill="x", pady=(0, 14))
 
+        button_row = ttk.Frame(frame)
+        button_row.pack(fill="x", pady=(0, 12))
+
         self.download_button = ttk.Button(
-            frame, text="Download",
+            button_row, text="Download",
             style="Accent.TButton",
             command=self.start_download
         )
         self.download_button.pack(
-            fill="x", pady=(0, 12)
+            side="left", fill="x", expand=True
+        )
+
+        self.cancel_button = ttk.Button(
+            button_row, text="Cancel",
+            style="Secondary.TButton",
+            command=self.cancel_download,
+            state="disabled"
+        )
+        self.cancel_button.pack(
+            side="left", padx=(8, 0)
         )
 
         progress_row = ttk.Frame(frame)
@@ -638,8 +654,10 @@ class MediaDownloader:
                 duration = end - start
 
         self.running = True
+        self.cancelled = False
         self.download_button.configure(state="disabled")
         self.load_button.configure(state="disabled")
+        self.cancel_button.configure(state="normal")
 
         self.progress["value"] = 0
         self.percent.set("0%")
@@ -656,6 +674,39 @@ class MediaDownloader:
             ),
             daemon=True
         ).start()
+
+    def cancel_download(self):
+        if not self.running or self.cancelled:
+            return
+
+        self.cancelled = True
+        self.cancel_button.configure(state="disabled")
+        self.status.set("Cancelling...")
+        self.write_log("Cancelling download...")
+
+        # If the worker has not started yt-dlp yet, it
+        # checks self.cancelled right after Popen.
+        process = self.process
+        self.stop_process(process, signal.SIGTERM)
+
+        # Force kill if yt-dlp or ffmpeg ignore SIGTERM.
+        self.root.after(
+            5000,
+            lambda: self.stop_process(
+                process, signal.SIGKILL
+            )
+        )
+
+    def stop_process(self, process, sig):
+        if process is None or process.poll() is not None:
+            return
+
+        # yt-dlp runs in its own process group, so this
+        # also stops the ffmpeg children it spawned.
+        try:
+            os.killpg(process.pid, sig)
+        except (ProcessLookupError, PermissionError):
+            pass
 
     def build_command(
         self, binary, url, folder,
@@ -787,8 +838,13 @@ class MediaDownloader:
                 stderr=subprocess.STDOUT,
                 text=True,
                 errors="replace",
-                bufsize=1
+                bufsize=1,
+                start_new_session=True
             )
+            self.process = process
+
+            if self.cancelled:
+                self.stop_process(process, signal.SIGTERM)
 
             for line in process.stdout:
                 line = line.strip()
@@ -846,7 +902,9 @@ class MediaDownloader:
 
             code = process.wait()
 
-            if code == 0:
+            if self.cancelled:
+                self.events.put(("cancelled", None))
+            elif code == 0:
                 self.events.put(("done", None))
             else:
                 errors = [
@@ -864,7 +922,13 @@ class MediaDownloader:
                 ))
 
         except Exception as error:
-            self.events.put(("failed", str(error)))
+            if self.cancelled:
+                self.events.put(("cancelled", None))
+            else:
+                self.events.put(("failed", str(error)))
+
+        finally:
+            self.process = None
 
     def process_events(self):
         try:
@@ -947,6 +1011,11 @@ class MediaDownloader:
                         "Chapter Error", value
                     )
 
+                elif event in ("progress", "status") and (
+                    self.cancelled
+                ):
+                    continue
+
                 elif event == "progress":
                     amount = max(0, min(100, value))
                     self.progress["value"] = amount
@@ -956,7 +1025,7 @@ class MediaDownloader:
                 elif event == "status":
                     self.status.set(value)
 
-                elif event in ("done", "failed"):
+                elif event in ("done", "failed", "cancelled"):
                     self.running = False
                     self.download_button.configure(
                         state="normal"
@@ -964,8 +1033,20 @@ class MediaDownloader:
                     self.load_button.configure(
                         state="normal"
                     )
+                    self.cancel_button.configure(
+                        state="disabled"
+                    )
 
-                    if event == "done":
+                    if event == "cancelled":
+                        self.progress["value"] = 0
+                        self.percent.set("0%")
+                        self.status.set("Download cancelled")
+                        self.write_log(
+                            "Download cancelled. Partial "
+                            ".part files may remain in the "
+                            "output folder."
+                        )
+                    elif event == "done":
                         self.progress["value"] = 100
                         self.percent.set("100%")
                         self.status.set(
